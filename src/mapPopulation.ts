@@ -1,8 +1,13 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { addBoxCollider, addCylinderCollider } from "./collision";
+import type { Collider } from "@dimforge/rapier3d-compat";
 import { WORLD } from "./constants";
+import type { PhysicsWorld } from "./physics";
 import { getTerrainHeight } from "./world";
+
+// shared across all chunks; loading the same GLB twice is wasteful
+const sharedModelCache = new Map<string, Promise<THREE.Object3D>>();
+const sharedLoader = new GLTFLoader();
 
 const DESERT_MODEL_BASE = "/models/kenney-desert/";
 
@@ -27,6 +32,16 @@ type ModelPlacement = {
   yOffset?: number;
 };
 
+type CompoundPart = {
+  // model-local units at scale=1; origin = bottom-center of model AABB
+  offsetX?: number;
+  offsetY?: number;
+  offsetZ?: number;
+  width: number;
+  height: number;
+  depth: number;
+};
+
 type ModelCollider =
   | {
       shape: "box";
@@ -38,6 +53,18 @@ type ModelCollider =
       shape: "cylinder";
       radiusScale?: number;
       heightScale?: number;
+      // extend the collider downward by this many world units below the
+      // model's visible bottom. useful on uneven terrain where a slope
+      // would otherwise expose an air gap on the downhill side.
+      bottomPad?: number;
+      // anchor the cylinder's x/z at the model's origin instead of the
+      // bbox center. use this for bent / offset models (e.g. curved palm)
+      // where the trunk base sits at the origin but the bbox drifts off.
+      anchorAtOrigin?: boolean;
+    }
+  | {
+      shape: "compound";
+      parts: CompoundPart[];
     }
   | {
       shape: "none";
@@ -102,7 +129,12 @@ const MODEL_COLLIDERS: Record<string, ModelCollider> = {
     radiusScale: 0.12,
     heightScale: 0.85,
   },
-  "palm-bend.glb": { shape: "cylinder", radiusScale: 0.12, heightScale: 0.8 },
+  "palm-bend.glb": {
+    shape: "cylinder",
+    radiusScale: 0.12,
+    heightScale: 0.8,
+    anchorAtOrigin: true,
+  },
   "palm-detailed-straight.glb": {
     shape: "cylinder",
     radiusScale: 0.12,
@@ -112,6 +144,7 @@ const MODEL_COLLIDERS: Record<string, ModelCollider> = {
     shape: "cylinder",
     radiusScale: 0.12,
     heightScale: 0.8,
+    anchorAtOrigin: true,
   },
 
   "grass.glb": { shape: "none" },
@@ -121,23 +154,26 @@ const MODEL_COLLIDERS: Record<string, ModelCollider> = {
   "patch-grass-foliage.glb": { shape: "none" },
   "patch-sand-foliage.glb": { shape: "none" },
 
-  "rocks-a.glb": { shape: "cylinder", radiusScale: 0.42, heightScale: 0.8 },
-  "rocks-b.glb": { shape: "cylinder", radiusScale: 0.42, heightScale: 0.8 },
-  "rocks-c.glb": { shape: "cylinder", radiusScale: 0.42, heightScale: 0.8 },
+  "rocks-a.glb": { shape: "cylinder", radiusScale: 0.95, heightScale: 0.9, bottomPad: 1.5 },
+  "rocks-b.glb": { shape: "cylinder", radiusScale: 0.95, heightScale: 0.9, bottomPad: 1.5 },
+  "rocks-c.glb": { shape: "cylinder", radiusScale: 0.95, heightScale: 0.9, bottomPad: 1.5 },
   "rocks-sand-a.glb": {
     shape: "cylinder",
-    radiusScale: 0.42,
-    heightScale: 0.8,
+    radiusScale: 0.95,
+    heightScale: 0.9,
+    bottomPad: 1.5,
   },
   "rocks-sand-b.glb": {
     shape: "cylinder",
-    radiusScale: 0.42,
-    heightScale: 0.8,
+    radiusScale: 0.95,
+    heightScale: 0.9,
+    bottomPad: 1.5,
   },
   "rocks-sand-c.glb": {
     shape: "cylinder",
-    radiusScale: 0.42,
-    heightScale: 0.8,
+    radiusScale: 0.95,
+    heightScale: 0.9,
+    bottomPad: 1.5,
   },
 
   "structure.glb": { shape: "box", widthScale: 0.85, depthScale: 0.85 },
@@ -171,23 +207,28 @@ const MODEL_COLLIDERS: Record<string, ModelCollider> = {
   "flag-pirate.glb": { shape: "cylinder", radiusScale: 0.12, heightScale: 0.9 },
   "cannon.glb": { shape: "box", widthScale: 0.8, depthScale: 0.8 },
 
+  // ships: hand-authored compound colliders. parts are in model-local units
+  // (scale=1); origin is at the bottom-center of the model's AABB, +Z is
+  // forward in model space. tweak these in place to dial in the feel.
   "ship-wreck.glb": {
-    shape: "box",
-    widthScale: 0.75,
-    depthScale: 0.8,
-    heightScale: 0.7,
+    shape: "compound",
+    parts: [
+      { offsetY: 0.25, width: 1.2, height: 0.5, depth: 3.2 },
+    ],
   },
   "ship-pirate-small.glb": {
-    shape: "box",
-    widthScale: 0.75,
-    depthScale: 0.8,
-    heightScale: 0.7,
+    shape: "compound",
+    parts: [
+      { offsetY: 0.3, width: 1.3, height: 0.6, depth: 3.4 },
+      { offsetY: 0.9, offsetZ: -1.3, width: 1.1, height: 0.5, depth: 1.0 },
+    ],
   },
   "ship-pirate-medium.glb": {
-    shape: "box",
-    widthScale: 0.75,
-    depthScale: 0.8,
-    heightScale: 0.7,
+    shape: "compound",
+    parts: [
+      { offsetY: 0.3, width: 1.4, height: 0.6, depth: 4.2 },
+      { offsetY: 1.0, offsetZ: -1.6, width: 1.2, height: 0.5, depth: 1.2 },
+    ],
   },
   "boat-row-small.glb": { shape: "box", widthScale: 0.8, depthScale: 0.85 },
   "well.glb": {
@@ -206,7 +247,10 @@ const MODEL_COLLIDERS: Record<string, ModelCollider> = {
   "tool-shovel.glb": { shape: "none" },
 };
 
-export function populateMapWithDesertItems(scene: THREE.Scene) {
+export function populateMapWithDesertItems(
+  scene: THREE.Scene,
+  physics: PhysicsWorld,
+) {
   const rng = createRng(POPULATION.seed);
   const loader = new GLTFLoader();
   const modelCache = new Map<string, Promise<THREE.Object3D>>();
@@ -216,7 +260,6 @@ export function populateMapWithDesertItems(scene: THREE.Scene) {
       .then((source) => {
         const item = source.clone(true);
         item.scale.setScalar(placement.scale);
-        const modelSize = measureObjectSize(item);
         item.rotation.y = placement.rotationY;
         placeObjectOnTerrain(
           item,
@@ -226,7 +269,7 @@ export function populateMapWithDesertItems(scene: THREE.Scene) {
         );
 
         scene.add(item);
-        addColliderForModel(placement, modelSize);
+        addColliderForModel(item, placement, physics);
       })
       .catch((error: unknown) => {
         console.error(`Failed to load ${placement.file}`, error);
@@ -269,10 +312,10 @@ export function populateMapWithDesertItems(scene: THREE.Scene) {
     const cactus = createCactus(rng);
     placeObjectOnTerrain(cactus, point.x, point.z, 0);
     scene.add(cactus);
-    addCylinderCollider({
+    physics.addStaticCylinder({
       x: point.x,
+      y: getTerrainHeight(point.x, point.z) + 3.8 / 2,
       z: point.z,
-      baseY: getTerrainHeight(point.x, point.z),
       radius: 0.45,
       height: 3.8,
     });
@@ -337,6 +380,7 @@ function addWellNearShip(
     z: clampToMap(shipZ + Math.sin(rotationY) * offsetDistance),
     scale: randomBetween(rng, 0.0009, 0.0012),
     rotationY: randomBetween(rng, 0, Math.PI * 2),
+    yOffset: -0.4,
   });
 }
 
@@ -437,52 +481,297 @@ function placeObjectOnTerrain(
 }
 
 function addColliderForModel(
+  item: THREE.Object3D,
   placement: ModelPlacement,
-  modelSize: THREE.Vector3,
-) {
+  physics: PhysicsWorld,
+): Collider[] {
+  const out: Collider[] = [];
   const collider = MODEL_COLLIDERS[placement.file];
 
   if (!collider || collider.shape === "none") {
-    return;
+    return out;
   }
 
-  const baseY =
-    getTerrainHeight(placement.x, placement.z) + (placement.yOffset ?? 0);
+  item.updateMatrixWorld(true);
 
-  if (collider.shape === "cylinder") {
-    const footprintRadius = Math.max(modelSize.x, modelSize.z) / 2;
-
-    addCylinderCollider({
-      x: placement.x,
-      z: placement.z,
-      baseY,
-      radius: footprintRadius * (collider.radiusScale ?? 0.5),
-      height: modelSize.y * (collider.heightScale ?? 1),
-    });
-    return;
-  }
-
-  addBoxCollider({
-    x: placement.x,
-    z: placement.z,
-    baseY,
-    width: modelSize.x * (collider.widthScale ?? 1),
-    depth: modelSize.z * (collider.depthScale ?? 1),
-    height: modelSize.y * (collider.heightScale ?? 1),
-    rotationY: placement.rotationY,
-  });
-}
-
-function measureObjectSize(object: THREE.Object3D) {
-  object.position.set(0, 0, 0);
-  object.rotation.set(0, 0, 0);
-  object.updateMatrixWorld(true);
-
-  const box = new THREE.Box3().setFromObject(object);
+  const box = new THREE.Box3().setFromObject(item);
+  const center = new THREE.Vector3();
   const size = new THREE.Vector3();
+
+  box.getCenter(center);
   box.getSize(size);
 
-  return size;
+  if (collider.shape === "cylinder") {
+    const footprintRadius = Math.max(size.x, size.z) / 2;
+    const bottomPad = collider.bottomPad ?? 0;
+    const height = size.y * (collider.heightScale ?? 1) + bottomPad;
+
+    const cx = collider.anchorAtOrigin ? placement.x : center.x;
+    const cz = collider.anchorAtOrigin ? placement.z : center.z;
+
+    out.push(
+      physics.addStaticCylinder({
+        x: cx,
+        // bottom now sits at (box.min.y - bottomPad), so the collider
+        // extends into the ground by `bottomPad` units.
+        y: box.min.y - bottomPad + height / 2,
+        z: cz,
+        radius: footprintRadius * (collider.radiusScale ?? 0.5),
+        height,
+      }),
+    );
+    return out;
+  }
+
+  if (collider.shape === "compound") {
+    // anchor each part at the model's world-space bottom-center, then rotate
+    // its local offset around Y by the placement's rotation.
+    const baseX = placement.x;
+    const baseZ = placement.z;
+    const baseY = box.min.y;
+    const scale = placement.scale;
+    const cosY = Math.cos(placement.rotationY);
+    const sinY = Math.sin(placement.rotationY);
+
+    for (const part of collider.parts) {
+      const localX = (part.offsetX ?? 0) * scale;
+      const localZ = (part.offsetZ ?? 0) * scale;
+      const worldX = cosY * localX + sinY * localZ;
+      const worldZ = -sinY * localX + cosY * localZ;
+
+      out.push(
+        physics.addStaticBox({
+          x: baseX + worldX,
+          y: baseY + (part.offsetY ?? 0) * scale,
+          z: baseZ + worldZ,
+          width: part.width * scale,
+          height: part.height * scale,
+          depth: part.depth * scale,
+          rotationY: placement.rotationY,
+        }),
+      );
+    }
+    return out;
+  }
+
+  out.push(
+    physics.addStaticBox({
+      x: center.x,
+      y: box.min.y + (size.y * (collider.heightScale ?? 1)) / 2,
+      z: center.z,
+      width: size.x * (collider.widthScale ?? 1),
+      depth: size.z * (collider.depthScale ?? 1),
+      height: size.y * (collider.heightScale ?? 1),
+      rotationY: 0,
+    }),
+  );
+  return out;
+}
+
+// ---- chunk-scoped population ----
+
+const CHUNK_DENSITY = {
+  // items per chunk area unit (chunkSize * chunkSize). Tune for visual density.
+  palm: 0.0018,
+  grass: 0.005,
+  rock: 0.003,
+  cactus: 0.0018,
+};
+
+// chance a given chunk hosts a ship. ships are kept fully inside their owning
+// chunk so they don't double-spawn or get split across boundaries.
+const CHUNK_SHIP_CHANCE = 0.01;
+const CHUNK_TREASURE_NEAR_SHIP_CHANCE = 0.6;
+// no trees / rocks / cacti within this radius of a ship so the ship reads
+// as the focal point of a clearing.
+const SHIP_CLEARING_RADIUS = 12;
+
+export function populateChunk(opts: {
+  cx: number;
+  cz: number;
+  chunkSize: number;
+  worldSeed: number;
+  scene: THREE.Scene;
+  physics: PhysicsWorld;
+  // chunk owns the lifetime of everything spawned here
+  onObjectAdded: (obj: THREE.Object3D) => void;
+  onCollidersAdded: (colliders: Collider[]) => void;
+}) {
+  const rng = chunkRng(opts.cx, opts.cz, opts.worldSeed);
+  const area = opts.chunkSize * opts.chunkSize;
+
+  const addModel = (placement: ModelPlacement) => {
+    loadModel(sharedLoader, sharedModelCache, placement.file)
+      .then((source) => {
+        const item = source.clone(true);
+        item.scale.setScalar(placement.scale);
+        item.rotation.y = placement.rotationY;
+        placeObjectOnTerrain(item, placement.x, placement.z, placement.yOffset ?? 0);
+
+        opts.scene.add(item);
+        opts.onObjectAdded(item);
+        opts.onCollidersAdded(addColliderForModel(item, placement, opts.physics));
+      })
+      .catch((error: unknown) => {
+        console.error(`Failed to load ${placement.file}`, error);
+      });
+  };
+
+  // ships first so we can drop nearby clutter to keep the scene composed
+  const exclusionZones: { x: number; z: number; radius: number }[] = [];
+  if (rng() < CHUNK_SHIP_CHANCE) {
+    spawnShipInChunk(addModel, rng, opts, exclusionZones);
+  }
+
+  spawnGroup(addModel, rng, opts, PALM_MODELS, CHUNK_DENSITY.palm * area, 1.5, 2.5, exclusionZones);
+  // grass is small / decorative, fine right up against the hull
+  spawnGroup(addModel, rng, opts, GRASS_MODELS, CHUNK_DENSITY.grass * area, 0.8, 1.6, null);
+  spawnGroup(addModel, rng, opts, ROCK_MODELS, CHUNK_DENSITY.rock * area, 1.1, 2.2, exclusionZones);
+
+  // cactus uses bespoke geometry + cylinder collider instead of GLB
+  const cactusCount = Math.round(CHUNK_DENSITY.cactus * area);
+  for (let i = 0; i < cactusCount; i++) {
+    const p = pickPointAvoiding(rng, opts, exclusionZones);
+    if (!p) continue;
+    const cactus = createCactus(rng);
+    placeObjectOnTerrain(cactus, p.x, p.z, 0);
+    opts.scene.add(cactus);
+    opts.onObjectAdded(cactus);
+    opts.onCollidersAdded([
+      opts.physics.addStaticCylinder({
+        x: p.x,
+        y: getTerrainHeight(p.x, p.z) + 3.8 / 2,
+        z: p.z,
+        radius: 0.45,
+        height: 3.8,
+      }),
+    ]);
+  }
+
+  // TODO: structures (towers, platforms, etc.) — same chunk-bounding
+  // approach as ships once you decide spawn rules.
+}
+
+function spawnShipInChunk(
+  addModel: (placement: ModelPlacement) => void,
+  rng: () => number,
+  opts: { cx: number; cz: number; chunkSize: number },
+  exclusionZones: { x: number; z: number; radius: number }[],
+) {
+  // pick a spawn point with margin so the ship + treasure cluster stay
+  // inside this chunk (no cross-chunk spillover, no double-spawn).
+  const margin = Math.min(opts.chunkSize * 0.35, 12);
+  const half = opts.chunkSize / 2 - margin;
+  if (half <= 0) return;
+
+  const x = opts.cx * opts.chunkSize + randomBetween(rng, -half, half);
+  const z = opts.cz * opts.chunkSize + randomBetween(rng, -half, half);
+  const rotationY = randomBetween(rng, 0, Math.PI * 2);
+
+  exclusionZones.push({ x, z, radius: SHIP_CLEARING_RADIUS });
+
+  addModel({
+    file: pick(rng, SHIP_MODELS),
+    x,
+    z,
+    scale: randomBetween(rng, 2.2, 3.2),
+    rotationY,
+  });
+
+  if (rng() < CHUNK_TREASURE_NEAR_SHIP_CHANCE) {
+    const itemCount = Math.floor(randomBetween(rng, 2, 5));
+    for (let i = 0; i < itemCount; i++) {
+      const angle = randomBetween(rng, 0, Math.PI * 2);
+      const distance = randomBetween(rng, 4, Math.min(margin - 1, 10));
+      addModel({
+        file: pick(rng, TREASURE_MODELS),
+        x: x + Math.cos(angle) * distance,
+        z: z + Math.sin(angle) * distance,
+        scale: randomBetween(rng, 0.9, 1.4),
+        rotationY: randomBetween(rng, 0, Math.PI * 2),
+      });
+    }
+  }
+}
+
+function spawnGroup(
+  addModel: (placement: ModelPlacement) => void,
+  rng: () => number,
+  opts: { cx: number; cz: number; chunkSize: number },
+  models: string[],
+  count: number,
+  minScale: number,
+  maxScale: number,
+  exclusions: { x: number; z: number; radius: number }[] | null,
+) {
+  const n = Math.round(count);
+  for (let i = 0; i < n; i++) {
+    const point = pickPointAvoiding(rng, opts, exclusions);
+    if (!point) continue;
+    addModel({
+      file: pick(rng, models),
+      x: point.x,
+      z: point.z,
+      scale: randomBetween(rng, minScale, maxScale),
+      rotationY: randomBetween(rng, 0, Math.PI * 2),
+    });
+  }
+}
+
+function randomPointInChunk(
+  rng: () => number,
+  opts: { cx: number; cz: number; chunkSize: number },
+) {
+  const half = opts.chunkSize / 2;
+  return {
+    x: opts.cx * opts.chunkSize + randomBetween(rng, -half, half),
+    z: opts.cz * opts.chunkSize + randomBetween(rng, -half, half),
+  };
+}
+
+// try a few times to find a point in-chunk that isn't inside any exclusion
+// zone. returns null if it can't — caller should treat that as "skip this item".
+function pickPointAvoiding(
+  rng: () => number,
+  opts: { cx: number; cz: number; chunkSize: number },
+  exclusions: { x: number; z: number; radius: number }[] | null,
+) {
+  const attempts = exclusions && exclusions.length > 0 ? 6 : 1;
+  for (let i = 0; i < attempts; i++) {
+    const p = randomPointInChunk(rng, opts);
+    if (!exclusions || !isInsideAnyZone(p.x, p.z, exclusions)) return p;
+  }
+  return null;
+}
+
+function isInsideAnyZone(
+  x: number,
+  z: number,
+  zones: { x: number; z: number; radius: number }[],
+) {
+  for (const zone of zones) {
+    const dx = x - zone.x;
+    const dz = z - zone.z;
+    if (dx * dx + dz * dz < zone.radius * zone.radius) return true;
+  }
+  return false;
+}
+
+function chunkRng(cx: number, cz: number, worldSeed: number) {
+  // hash chunk coords + world seed into a single 32-bit value, then
+  // run the same mulberry-style PRNG used by `createRng`.
+  let value =
+    (Math.imul(cx | 0, 374761393) +
+      Math.imul(cz | 0, 668265263) +
+      (worldSeed | 0)) |
+    0;
+  return () => {
+    value |= 0;
+    value = (value + 0x6d2b79f5) | 0;
+    let r = Math.imul(value ^ (value >>> 15), 1 | value);
+    r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
 function randomPoint(rng: () => number) {

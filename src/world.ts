@@ -13,6 +13,11 @@ import FastNoiseLite from "fastnoise-lite";
 const noise = new FastNoiseLite();
 noise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
 
+// secondary noise layer for high-frequency facets — gives each triangle its
+// own slight tilt so flat shading produces visible variation.
+const detailNoise = new FastNoiseLite(1337);
+detailNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
+
 export function createFloor() {
   const floorGeometry = new THREE.PlaneGeometry(
     WORLD.floorSize,
@@ -64,6 +69,7 @@ function createSandMaterial(color: number) {
     map: sandTexture,
     roughness: 1,
     metalness: 0,
+    flatShading: true,
   });
 }
 
@@ -98,11 +104,80 @@ function createSandTexture() {
   return new THREE.CanvasTexture(canvas);
 }
 
+// Build a terrain chunk centered at (cx*size, cz*size). Vertices are sampled
+// via `getTerrainHeight`, which is pure noise — neighbouring chunks share
+// boundary vertex heights, so chunk seams are watertight.
+export function createChunkTerrain(
+  cx: number,
+  cz: number,
+  size: number,
+  segments: number,
+) {
+  const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
+  const positions = geometry.attributes.position;
+  const worldOriginX = cx * size;
+  const worldOriginZ = cz * size;
+
+  for (let i = 0; i < positions.count; i++) {
+    // PlaneGeometry is in XY at the time we read; rotate -90° around X later
+    // turns local Y into world -Z, so we feed (-localY) into the noise.
+    const localX = positions.getX(i);
+    const localY = positions.getY(i);
+    const worldX = worldOriginX + localX;
+    const worldZ = worldOriginZ + -localY;
+    positions.setZ(i, getTerrainHeight(worldX, worldZ));
+  }
+  positions.needsUpdate = true;
+  geometry.computeVertexNormals();
+
+  const terrainColor =
+    CURRENT_TERRAIN === TERRAIN_TYPES.forest
+      ? WORLD.forestColor
+      : WORLD.sandColor;
+
+  const material =
+    CURRENT_TERRAIN === TERRAIN_TYPES.sand
+      ? createSandMaterial(terrainColor)
+      : new THREE.MeshStandardMaterial({
+          color: terrainColor,
+          roughness: 1,
+          metalness: 0,
+          flatShading: true,
+        });
+
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(worldOriginX, 0, worldOriginZ);
+  return mesh;
+}
+
 export function getTerrainHeight(x: number, z: number) {
-  return (
-    noise.GetNoise(x * TERRAIN.noiseScale, -z * TERRAIN.noiseScale) *
-    TERRAIN.amplitude
-  );
+  // fractal brownian motion: sum N octaves at doubling frequency / halving
+  // amplitude. produces large mountain shapes with smaller hill detail
+  // baked in from a single deterministic function.
+  let amp = 1;
+  let freq = TERRAIN.noiseScale;
+  let sum = 0;
+  let norm = 0;
+  for (let i = 0; i < TERRAIN.octaves; i++) {
+    sum += noise.GetNoise(x * freq, -z * freq) * amp;
+    norm += amp;
+    amp *= 0.5;
+    freq *= 2;
+  }
+  const n = sum / norm; // -1..1
+
+  // shape the curve so peaks stand out and basins read flatter
+  const shaped = Math.sign(n) * Math.pow(Math.abs(n), TERRAIN.ridgeExponent);
+  const base = shaped * TERRAIN.amplitude;
+
+  const detail =
+    detailNoise.GetNoise(
+      x * TERRAIN.detailNoiseScale,
+      -z * TERRAIN.detailNoiseScale,
+    ) * TERRAIN.detailAmplitude;
+
+  return base + detail;
 }
 
 export function createSun() {

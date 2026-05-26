@@ -13,6 +13,7 @@ export const PLAYER = {
   radius: 0.45,
   groundHeight: 2,
   moveSpeed: 0.08,
+  sprintMultiplier: 1.8,
   jumpStrength: 0.18,
   gravity: 0.003,
   spawnPosition: new THREE.Vector3(0, 0, 0),
@@ -33,16 +34,24 @@ export const TERRAIN_TYPES = {
 export const CURRENT_TERRAIN = TERRAIN_TYPES.sand;
 
 export const TERRAIN = {
-  segments: 128,
-  noiseScale: 2,
-  amplitude: 3,
+  segments: 220,
+  // base frequency for the fbm stack — lower = bigger mountain features
+  noiseScale: 0.4,
+  // peak height in world units. octaves are normalized to [-1, 1] then shaped.
+  amplitude: 30,
+  // how many octaves to sum; each doubles frequency, halves amplitude
+  octaves: 5,
+  // exponent applied to abs(noise) before scaling — >1 sharpens peaks/valleys
+  ridgeExponent: 1.6,
+  detailNoiseScale: 18,
+  detailAmplitude: 0.18,
   textureRepeat: 12,
 };
 
 export const LIGHTING = {
   ambientColor: 0xffffff,
-  ambientIntensity: 0.1,
+  ambientIntensity: 0.35,
   sunColor: 0xfff2b0,
-  sunIntensity: 1.5,
+  sunIntensity: 2.2,
   sunPosition: new THREE.Vector3(15, 40, 10),
 };
