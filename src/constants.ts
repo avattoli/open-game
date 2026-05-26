@@ -15,6 +15,7 @@ export const PLAYER = {
   moveSpeed: 0.08,
   jumpStrength: 0.18,
   gravity: 0.003,
+  spawnPosition: new THREE.Vector3(0, 0, 0),
 };
 
 export const WORLD = {

@@ -19,7 +19,7 @@ if (!canvas) {
 const scene = createScene();
 const camera = createCamera();
 const renderer = createRenderer(canvas);
-const player = createPlayerControls(camera, canvas);
+const player = createPlayerControls(camera, canvas, scene);
 const { ambientLight, sunLight } = createLights();
 
 scene.add(ambientLight);

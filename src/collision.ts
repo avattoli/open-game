@@ -48,6 +48,20 @@ export function isPlayerColliding(position: THREE.Vector3) {
   });
 }
 
+export function pushCharacterOutOfColliders(
+  characterPosition: THREE.Vector3,
+  groundOffset = 0,
+) {
+  // use the character body position, then copy only x/z back
+  const bodyPosition = characterPosition.clone();
+
+  bodyPosition.y -= groundOffset;
+  pushPlayerOutOfColliders(bodyPosition);
+
+  characterPosition.x = bodyPosition.x;
+  characterPosition.z = bodyPosition.z;
+}
+
 export function pushPlayerOutOfColliders(position: THREE.Vector3) {
   for (let i = 0; i < 3; i++) {
     let wasPushed = false;
@@ -78,8 +92,9 @@ export function pushPlayerOutOfColliders(position: THREE.Vector3) {
 }
 
 function hasVerticalOverlap(position: THREE.Vector3, collider: Collider) {
-  const playerBottom = position.y - PLAYER.height;
-  const playerTop = position.y;
+  // position is the character's ground point, not the camera
+  const playerBottom = position.y;
+  const playerTop = position.y + PLAYER.height;
   const colliderBottom = collider.baseY;
   const colliderTop = collider.baseY + collider.height;
 
@@ -117,10 +132,7 @@ function collidesWithBox(position: THREE.Vector3, collider: BoxCollider) {
   );
 }
 
-function getCylinderPush(
-  position: THREE.Vector3,
-  collider: CylinderCollider,
-) {
+function getCylinderPush(position: THREE.Vector3, collider: CylinderCollider) {
   const dx = position.x - collider.x;
   const dz = position.z - collider.z;
   const radius = PLAYER.radius + collider.radius;

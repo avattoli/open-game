@@ -97,7 +97,11 @@ const TREASURE_MODELS = [
 ];
 
 const MODEL_COLLIDERS: Record<string, ModelCollider> = {
-  "palm-straight.glb": { shape: "cylinder", radiusScale: 0.12, heightScale: 0.85 },
+  "palm-straight.glb": {
+    shape: "cylinder",
+    radiusScale: 0.12,
+    heightScale: 0.85,
+  },
   "palm-bend.glb": { shape: "cylinder", radiusScale: 0.12, heightScale: 0.8 },
   "palm-detailed-straight.glb": {
     shape: "cylinder",
@@ -120,9 +124,21 @@ const MODEL_COLLIDERS: Record<string, ModelCollider> = {
   "rocks-a.glb": { shape: "cylinder", radiusScale: 0.42, heightScale: 0.8 },
   "rocks-b.glb": { shape: "cylinder", radiusScale: 0.42, heightScale: 0.8 },
   "rocks-c.glb": { shape: "cylinder", radiusScale: 0.42, heightScale: 0.8 },
-  "rocks-sand-a.glb": { shape: "cylinder", radiusScale: 0.42, heightScale: 0.8 },
-  "rocks-sand-b.glb": { shape: "cylinder", radiusScale: 0.42, heightScale: 0.8 },
-  "rocks-sand-c.glb": { shape: "cylinder", radiusScale: 0.42, heightScale: 0.8 },
+  "rocks-sand-a.glb": {
+    shape: "cylinder",
+    radiusScale: 0.42,
+    heightScale: 0.8,
+  },
+  "rocks-sand-b.glb": {
+    shape: "cylinder",
+    radiusScale: 0.42,
+    heightScale: 0.8,
+  },
+  "rocks-sand-c.glb": {
+    shape: "cylinder",
+    radiusScale: 0.42,
+    heightScale: 0.8,
+  },
 
   "structure.glb": { shape: "box", widthScale: 0.85, depthScale: 0.85 },
   "structure-fence.glb": {
@@ -155,7 +171,12 @@ const MODEL_COLLIDERS: Record<string, ModelCollider> = {
   "flag-pirate.glb": { shape: "cylinder", radiusScale: 0.12, heightScale: 0.9 },
   "cannon.glb": { shape: "box", widthScale: 0.8, depthScale: 0.8 },
 
-  "ship-wreck.glb": { shape: "box", widthScale: 0.75, depthScale: 0.8, heightScale: 0.7 },
+  "ship-wreck.glb": {
+    shape: "box",
+    widthScale: 0.75,
+    depthScale: 0.8,
+    heightScale: 0.7,
+  },
   "ship-pirate-small.glb": {
     shape: "box",
     widthScale: 0.75,
@@ -169,7 +190,12 @@ const MODEL_COLLIDERS: Record<string, ModelCollider> = {
     heightScale: 0.7,
   },
   "boat-row-small.glb": { shape: "box", widthScale: 0.8, depthScale: 0.85 },
-  "well.glb": { shape: "box", widthScale: 0.75, depthScale: 0.75, heightScale: 0.8 },
+  "well.glb": {
+    shape: "box",
+    widthScale: 0.75,
+    depthScale: 0.75,
+    heightScale: 0.8,
+  },
 
   "chest.glb": { shape: "box", widthScale: 0.85, depthScale: 0.85 },
   "crate.glb": { shape: "box", widthScale: 0.9, depthScale: 0.9 },
@@ -501,7 +527,8 @@ function createRng(seed: number) {
     value = (value + 0x6d2b79f5) | 0;
 
     let result = Math.imul(value ^ (value >>> 15), 1 | value);
-    result = (result + Math.imul(result ^ (result >>> 7), 61 | result)) ^ result;
+    result =
+      (result + Math.imul(result ^ (result >>> 7), 61 | result)) ^ result;
 
     return ((result ^ (result >>> 14)) >>> 0) / 4294967296;
   };

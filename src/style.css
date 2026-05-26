@@ -35,35 +35,3 @@ body {
   outline: 3px solid #2b1a0c;
   transform: translateY(-4px);
 }
-
-#crosshair {
-  position: fixed;
-  left: 50%;
-  top: 50%;
-  width: 14px;
-  height: 14px;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-  z-index: 20;
-}
-
-#crosshair::before,
-#crosshair::after {
-  content: "";
-  position: absolute;
-  background: white;
-}
-
-#crosshair::before {
-  left: 6px;
-  top: 0;
-  width: 2px;
-  height: 14px;
-}
-
-#crosshair::after {
-  left: 0;
-  top: 6px;
-  width: 14px;
-  height: 2px;
-}
