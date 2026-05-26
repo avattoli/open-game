@@ -2,7 +2,7 @@
 
 A tiny pirate-desert world experiment built with Three.js. The vibe is: cute
 third-person character, sandy procedural worlds, random props, and the start of
-a Growtopia-style world/economy sandbox.
+a world/economy sandbox.
 
 ## What It Does
 
