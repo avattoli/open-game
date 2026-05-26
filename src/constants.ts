@@ -10,6 +10,7 @@ export const CAMERA = {
 
 export const PLAYER = {
   height: 2,
+  radius: 0.45,
   groundHeight: 2,
   moveSpeed: 0.08,
   jumpStrength: 0.18,
@@ -18,7 +19,7 @@ export const PLAYER = {
 
 export const WORLD = {
   skyColor: 0x87ceeb,
-  sandColor: 0xd8b86a,
+  sandColor: 0xffdc7a,
   forestColor: 0x4f8f3a,
   floorSize: 260,
 };
@@ -32,7 +33,7 @@ export const CURRENT_TERRAIN = TERRAIN_TYPES.sand;
 
 export const TERRAIN = {
   segments: 128,
-  noiseScale: 4,
+  noiseScale: 2,
   amplitude: 3,
   textureRepeat: 12,
 };

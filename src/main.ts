@@ -7,6 +7,7 @@ import {
   createScene,
   handleResize,
 } from "./scene";
+import { populateMapWithDesertItems } from "./mapPopulation";
 import { createFloor, createSun } from "./world";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#app");
@@ -25,6 +26,7 @@ scene.add(ambientLight);
 scene.add(sunLight);
 scene.add(createFloor());
 scene.add(createSun());
+populateMapWithDesertItems(scene);
 handleResize(camera, renderer);
 
 function animate() {

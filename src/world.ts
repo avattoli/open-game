@@ -82,10 +82,10 @@ function createSandTexture() {
   const imageData = context.createImageData(size, size);
 
   for (let i = 0; i < imageData.data.length; i += 4) {
-    const grain = Math.random() * 8 - 2;
-    const red = 246 + grain;
-    const green = 226 + grain * 0.8;
-    const blue = 156 + grain * 0.5;
+    const grain = Math.random() * 6 - 1;
+    const red = 255;
+    const green = 232 + grain * 0.6;
+    const blue = 138 + grain * 0.4;
 
     imageData.data[i] = red;
     imageData.data[i + 1] = green;

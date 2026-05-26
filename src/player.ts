@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
-import { PLAYER } from "./constants";
+import { pushPlayerOutOfColliders } from "./collision";
+import { PLAYER, WORLD } from "./constants";
 import { getTerrainHeight } from "./world";
 type MovementKeys = {
   forward: boolean;
@@ -24,6 +25,15 @@ export function createPlayerControls(
   let velocityY = 0;
   let isOnGround = true;
 
+  let selectedSlot = 1;
+
+  document.addEventListener("keydown", (event) => {
+    if (event.code === "Digit1") selectedSlot = 1;
+    if (event.code === "Digit2") selectedSlot = 2;
+    if (event.code === "Digit3") selectedSlot = 3;
+    if (event.code === "Digit4") selectedSlot = 4;
+    if (event.code.startsWith("Digit")) updateHotbar();
+  });
   document.addEventListener("click", () => {
     controls.lock();
   });
@@ -40,6 +50,22 @@ export function createPlayerControls(
     }
   });
 
+  function updateHotbar() {
+    const slots = document.querySelectorAll<HTMLButtonElement>(".hotbar-slot")
+
+    slots.forEach((slot) => {
+      const slotNumber = Number(slot.dataset.slot)
+
+      if (slotNumber === selectedSlot) {
+        slot.classList.add("selected")
+      } else {
+        slot.classList.remove("selected")
+      }
+    })
+  }
+
+  updateHotbar();
+
   document.addEventListener("keyup", (event) => {
     if (event.code === "KeyW") keys.forward = false;
     if (event.code === "KeyS") keys.backward = false;
@@ -52,6 +78,34 @@ export function createPlayerControls(
     if (keys.backward) controls.moveForward(-PLAYER.moveSpeed);
     if (keys.left) controls.moveRight(-PLAYER.moveSpeed);
     if (keys.right) controls.moveRight(PLAYER.moveSpeed);
+
+    const halfWorld = WORLD.floorSize / 2;
+
+    camera.position.x = THREE.MathUtils.clamp(
+      camera.position.x,
+      -halfWorld,
+      halfWorld,
+    );
+
+    camera.position.z = THREE.MathUtils.clamp(
+      camera.position.z,
+      -halfWorld,
+      halfWorld,
+    );
+
+    pushPlayerOutOfColliders(camera.position);
+
+    camera.position.x = THREE.MathUtils.clamp(
+      camera.position.x,
+      -halfWorld,
+      halfWorld,
+    );
+
+    camera.position.z = THREE.MathUtils.clamp(
+      camera.position.z,
+      -halfWorld,
+      halfWorld,
+    );
 
     velocityY -= PLAYER.gravity;
     camera.position.y += velocityY;
