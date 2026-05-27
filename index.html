@@ -9,11 +9,47 @@
     <canvas id="app"></canvas>
     <script type="module" src="/src/main.ts"></script>
 
-    <div id="hotbar">
-      <button class="hotbar-slot selected" data-slot="1">1</button>
-      <button class="hotbar-slot" data-slot="2">2</button>
-      <button class="hotbar-slot" data-slot="3">3</button>
-      <button class="hotbar-slot" data-slot="4">4</button>
+    <div id="hotbar" aria-label="hotbar">
+      <button
+        class="hotbar-slot selected"
+        data-slot="1"
+        data-item="hand"
+        type="button"
+        aria-label="slot 1, hand"
+      >
+        <span class="slot-key">1</span>
+        <span class="slot-icon" aria-hidden="true"></span>
+      </button>
+      <button
+        class="hotbar-slot"
+        data-slot="2"
+        data-item="pickaxe"
+        type="button"
+        aria-label="slot 2, pickaxe"
+      >
+        <span class="slot-key">2</span>
+        <span class="slot-icon" aria-hidden="true"></span>
+      </button>
+      <button
+        class="hotbar-slot"
+        data-slot="3"
+        data-item="hatchet"
+        type="button"
+        aria-label="slot 3, hatchet"
+      >
+        <span class="slot-key">3</span>
+        <span class="slot-icon" aria-hidden="true"></span>
+      </button>
+      <button
+        class="hotbar-slot"
+        data-slot="4"
+        data-item="empty"
+        type="button"
+        aria-label="slot 4, empty"
+      >
+        <span class="slot-key">4</span>
+        <span class="slot-icon" aria-hidden="true"></span>
+      </button>
     </div>
   </body>
 </html>

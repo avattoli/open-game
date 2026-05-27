@@ -35,7 +35,10 @@ export function createPlayerControls(
   let jumpAction: THREE.AnimationAction | null = null;
   let deathAction: THREE.AnimationAction | null = null;
   let standUpAction: THREE.AnimationAction | null = null;
+  let slashAction: THREE.AnimationAction | null = null;
   let currentAction: THREE.AnimationAction | null = null;
+  let isSwinging = false;
+  let swingTimeLeft = 0;
   let isSprinting = false;
   let velocityY = 0;
   let isOnGround = false;
@@ -71,6 +74,7 @@ export function createPlayerControls(
     const character = gltf.scene;
     character.scale.setScalar(0.6);
     setCharacterSkinColor(character, 0xc68652);
+    setCharacterShadows(character);
 
     // center the model around playerroot
     const box = new THREE.Box3().setFromObject(character);
@@ -149,6 +153,15 @@ export function createPlayerControls(
       standUpAction.clampWhenFinished = true;
     }
 
+    const slashClip = gltf.animations.find((clip) =>
+      clip.name.toLowerCase().includes("swordslash"),
+    );
+    if (slashClip) {
+      slashAction = mixer.clipAction(slashClip);
+      slashAction.setLoop(THREE.LoopOnce, 1);
+      slashAction.clampWhenFinished = false;
+    }
+
     // drive the entrance sequence: when one one-shot finishes, advance state.
     mixer.addEventListener("finished", (event) => {
       const action = (event as unknown as { action: THREE.AnimationAction }).action;
@@ -161,6 +174,8 @@ export function createPlayerControls(
         }
       } else if (action === standUpAction && spawnPhase === "standup") {
         spawnPhase = "done";
+      } else if (action === slashAction) {
+        finishSwing();
       }
     });
 
@@ -274,6 +289,18 @@ export function createPlayerControls(
     canvas.requestPointerLock();
   });
 
+  // left click while pointer is locked swings the equipped tool. freehand
+  // (slot 1) doesn't swing.
+  canvas.addEventListener("mousedown", (event) => {
+    if (event.button !== 0) return;
+    if (document.pointerLockElement !== canvas) return;
+    if (spawnPhase !== "done") return;
+    if (selectedSlot !== 2 && selectedSlot !== 3) return;
+    if (!slashAction || isSwinging) return;
+
+    startSwing();
+  });
+
   // mouse movement rotates the orbit camera
   document.addEventListener("mousemove", (event) => {
     if (document.pointerLockElement !== canvas) return;
@@ -309,6 +336,7 @@ export function createPlayerControls(
     if (event.code === "Space" && isOnGround && spawnPhase === "done") {
       velocityY = PLAYER.jumpStrength;
       isOnGround = false;
+      finishSwing();
       if (jumpAction) {
         jumpAction.reset();
         playAnimation(jumpAction);
@@ -373,6 +401,16 @@ export function createPlayerControls(
     });
   }
 
+  function setCharacterShadows(character: THREE.Object3D) {
+    // player should throw a soft readable shadow on the sand
+    character.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+
+      child.castShadow = true;
+      child.receiveShadow = true;
+    });
+  }
+
   function updateCamera(
     cam: THREE.PerspectiveCamera,
     offsetX: number,
@@ -405,10 +443,49 @@ export function createPlayerControls(
     currentAction = nextAction;
   }
 
+  function playOneShotAnimation(nextAction: THREE.AnimationAction | null) {
+    // one-shots need to be restartable even if they are already current
+    if (!nextAction) return;
+
+    if (currentAction === nextAction) {
+      nextAction.stop();
+    } else {
+      currentAction?.fadeOut(0.08);
+    }
+
+    nextAction.reset().fadeIn(0.08).play();
+    currentAction = nextAction;
+  }
+
+  function startSwing() {
+    if (!slashAction) return;
+
+    isSwinging = true;
+    swingTimeLeft = slashAction.getClip().duration + 0.15;
+    playOneShotAnimation(slashAction);
+  }
+
+  function finishSwing() {
+    isSwinging = false;
+    swingTimeLeft = 0;
+
+    if (currentAction === slashAction) {
+      slashAction?.fadeOut(0.08);
+      currentAction = null;
+    }
+  }
+
   function update() {
     // update character animation
     const delta = clock.getDelta();
     mixer?.update(delta);
+
+    if (isSwinging) {
+      swingTimeLeft -= delta;
+      if (swingTimeLeft <= 0) {
+        finishSwing();
+      }
+    }
 
     // convert yaw and pitch into a camera offset
     const offsetX = Math.sin(cameraYaw) * Math.cos(cameraPitch) * camera_radius;
@@ -452,10 +529,9 @@ export function createPlayerControls(
       );
     }
 
-    // only override the animation channel when grounded — leave the jump
-    // clip alone while airborne so it plays through. during the entrance
-    // sequence, the death/standup clips own the channel.
-    if (isOnGround && controlsActive) {
+    // only override the animation channel when grounded and not in the
+    // middle of a one-shot clip (jump airborne / death-standup / swing).
+    if (isOnGround && controlsActive && !isSwinging) {
       const moveAction = sprinting ? (runAction ?? walkAction) : walkAction;
       playAnimation(isMoving ? moveAction : idleAction);
     }

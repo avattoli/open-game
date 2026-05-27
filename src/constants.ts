@@ -21,7 +21,7 @@ export const PLAYER = {
 
 export const WORLD = {
   skyColor: 0x87ceeb,
-  sandColor: 0xffdc7a,
+  sandColor: 0xffd16b,
   forestColor: 0x4f8f3a,
   floorSize: 260,
 };
@@ -45,7 +45,7 @@ export const TERRAIN = {
   ridgeExponent: 1.6,
   detailNoiseScale: 18,
   detailAmplitude: 0.18,
-  textureRepeat: 12,
+  textureRepeat: 18,
 };
 
 export const LIGHTING = {

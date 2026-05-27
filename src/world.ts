@@ -36,6 +36,7 @@ export function createFloor() {
     positions.setZ(i, height);
   }
   positions.needsUpdate = true;
+  addTerrainVertexColors(floorGeometry, positions);
   floorGeometry.computeVertexNormals();
 
   const terrainColor =
@@ -53,6 +54,7 @@ export function createFloor() {
         });
   const floor = new THREE.Mesh(floorGeometry, floorMaterial);
   floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
 
   return floor;
 }
@@ -63,6 +65,9 @@ function createSandMaterial(color: number) {
   sandTexture.wrapT = THREE.RepeatWrapping;
   sandTexture.repeat.set(TERRAIN.textureRepeat, TERRAIN.textureRepeat);
   sandTexture.colorSpace = THREE.SRGBColorSpace;
+  sandTexture.magFilter = THREE.NearestFilter;
+  sandTexture.minFilter = THREE.NearestFilter;
+  sandTexture.generateMipmaps = false;
 
   return new THREE.MeshStandardMaterial({
     color,
@@ -70,11 +75,12 @@ function createSandMaterial(color: number) {
     roughness: 1,
     metalness: 0,
     flatShading: true,
+    vertexColors: true,
   });
 }
 
 function createSandTexture() {
-  const size = 256;
+  const size = 64;
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
@@ -86,22 +92,59 @@ function createSandTexture() {
   }
 
   const imageData = context.createImageData(size, size);
+  const palette = [
+    [255, 223, 120],
+    [255, 210, 102],
+    [245, 190, 82],
+    [255, 235, 150],
+  ];
 
-  for (let i = 0; i < imageData.data.length; i += 4) {
-    const grain = Math.random() * 6 - 1;
-    const red = 255;
-    const green = 232 + grain * 0.6;
-    const blue = 138 + grain * 0.4;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const index = (y * size + x) * 4;
+      const cell = Math.floor(x / 4) + Math.floor(y / 4) * 17;
+      const windLine = (x + y * 2) % 19 === 0;
+      const color = palette[(cell + (windLine ? 3 : 0)) % palette.length];
 
-    imageData.data[i] = red;
-    imageData.data[i + 1] = green;
-    imageData.data[i + 2] = blue;
-    imageData.data[i + 3] = 255;
+      imageData.data[index] = color[0];
+      imageData.data[index + 1] = color[1];
+      imageData.data[index + 2] = color[2];
+      imageData.data[index + 3] = 255;
+    }
   }
 
   context.putImageData(imageData, 0, 0);
 
   return new THREE.CanvasTexture(canvas);
+}
+
+function addTerrainVertexColors(
+  geometry: THREE.BufferGeometry,
+  positions: THREE.BufferAttribute | THREE.InterleavedBufferAttribute,
+) {
+  const colors = new Float32Array(positions.count * 3);
+  const low = new THREE.Color(0xf5bd52);
+  const mid = new THREE.Color(0xffdc7a);
+  const high = new THREE.Color(0xffeea6);
+
+  for (let i = 0; i < positions.count; i++) {
+    const height = positions.getZ(i);
+    const heightMix = THREE.MathUtils.clamp(
+      (height + TERRAIN.amplitude) / (TERRAIN.amplitude * 2),
+      0,
+      1,
+    );
+    const color =
+      heightMix > 0.55
+        ? mid.clone().lerp(high, (heightMix - 0.55) / 0.45)
+        : low.clone().lerp(mid, heightMix / 0.55);
+
+    colors[i * 3] = color.r;
+    colors[i * 3 + 1] = color.g;
+    colors[i * 3 + 2] = color.b;
+  }
+
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 }
 
 // Build a terrain chunk centered at (cx*size, cz*size). Vertices are sampled
@@ -128,6 +171,7 @@ export function createChunkTerrain(
     positions.setZ(i, getTerrainHeight(worldX, worldZ));
   }
   positions.needsUpdate = true;
+  addTerrainVertexColors(geometry, positions);
   geometry.computeVertexNormals();
 
   const terrainColor =
@@ -148,6 +192,7 @@ export function createChunkTerrain(
   const mesh = new THREE.Mesh(geometry, material);
   mesh.rotation.x = -Math.PI / 2;
   mesh.position.set(worldOriginX, 0, worldOriginZ);
+  mesh.receiveShadow = true;
   return mesh;
 }
 

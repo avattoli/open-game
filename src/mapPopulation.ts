@@ -267,6 +267,7 @@ export function populateMapWithDesertItems(
           placement.z,
           placement.yOffset ?? 0,
         );
+        setObjectShadows(item);
 
         scene.add(item);
         addColliderForModel(item, placement, physics);
@@ -311,6 +312,7 @@ export function populateMapWithDesertItems(
     const point = randomPoint(rng);
     const cactus = createCactus(rng);
     placeObjectOnTerrain(cactus, point.x, point.z, 0);
+    setObjectShadows(cactus);
     scene.add(cactus);
     physics.addStaticCylinder({
       x: point.x,
@@ -586,6 +588,19 @@ const CHUNK_TREASURE_NEAR_SHIP_CHANCE = 0.6;
 // as the focal point of a clearing.
 const SHIP_CLEARING_RADIUS = 12;
 
+type FlatGroundRule = {
+  maxSlope: number;
+  sampleRadius: number;
+  attempts: number;
+};
+
+const FLAT_GROUND = {
+  // slope is rise/run. 0.5 means about 1 unit up over 2 units sideways.
+  decorative: { maxSlope: 0.55, sampleRadius: 2, attempts: 10 },
+  solid: { maxSlope: 0.42, sampleRadius: 3, attempts: 16 },
+  large: { maxSlope: 0.28, sampleRadius: 6, attempts: 30 },
+} satisfies Record<string, FlatGroundRule>;
+
 export function populateChunk(opts: {
   cx: number;
   cz: number;
@@ -607,6 +622,7 @@ export function populateChunk(opts: {
         item.scale.setScalar(placement.scale);
         item.rotation.y = placement.rotationY;
         placeObjectOnTerrain(item, placement.x, placement.z, placement.yOffset ?? 0);
+        setObjectShadows(item);
 
         opts.scene.add(item);
         opts.onObjectAdded(item);
@@ -623,18 +639,54 @@ export function populateChunk(opts: {
     spawnShipInChunk(addModel, rng, opts, exclusionZones);
   }
 
-  spawnGroup(addModel, rng, opts, PALM_MODELS, CHUNK_DENSITY.palm * area, 1.5, 2.5, exclusionZones);
+  spawnGroup(
+    addModel,
+    rng,
+    opts,
+    PALM_MODELS,
+    CHUNK_DENSITY.palm * area,
+    1.5,
+    2.5,
+    exclusionZones,
+    FLAT_GROUND.solid,
+  );
   // grass is small / decorative, fine right up against the hull
-  spawnGroup(addModel, rng, opts, GRASS_MODELS, CHUNK_DENSITY.grass * area, 0.8, 1.6, null);
-  spawnGroup(addModel, rng, opts, ROCK_MODELS, CHUNK_DENSITY.rock * area, 1.1, 2.2, exclusionZones);
+  spawnGroup(
+    addModel,
+    rng,
+    opts,
+    GRASS_MODELS,
+    CHUNK_DENSITY.grass * area,
+    0.8,
+    1.6,
+    null,
+    FLAT_GROUND.decorative,
+  );
+  spawnGroup(
+    addModel,
+    rng,
+    opts,
+    ROCK_MODELS,
+    CHUNK_DENSITY.rock * area,
+    1.1,
+    2.2,
+    exclusionZones,
+    FLAT_GROUND.solid,
+  );
 
   // cactus uses bespoke geometry + cylinder collider instead of GLB
   const cactusCount = Math.round(CHUNK_DENSITY.cactus * area);
   for (let i = 0; i < cactusCount; i++) {
-    const p = pickPointAvoiding(rng, opts, exclusionZones);
+    const p = pickPointAvoiding(
+      rng,
+      opts,
+      exclusionZones,
+      FLAT_GROUND.solid,
+    );
     if (!p) continue;
     const cactus = createCactus(rng);
     placeObjectOnTerrain(cactus, p.x, p.z, 0);
+    setObjectShadows(cactus);
     opts.scene.add(cactus);
     opts.onObjectAdded(cactus);
     opts.onCollidersAdded([
@@ -652,6 +704,15 @@ export function populateChunk(opts: {
   // approach as ships once you decide spawn rules.
 }
 
+function setObjectShadows(object: THREE.Object3D) {
+  object.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+
+    child.castShadow = true;
+    child.receiveShadow = true;
+  });
+}
+
 function spawnShipInChunk(
   addModel: (placement: ModelPlacement) => void,
   rng: () => number,
@@ -661,11 +722,16 @@ function spawnShipInChunk(
   // pick a spawn point with margin so the ship + treasure cluster stay
   // inside this chunk (no cross-chunk spillover, no double-spawn).
   const margin = Math.min(opts.chunkSize * 0.35, 12);
-  const half = opts.chunkSize / 2 - margin;
-  if (half <= 0) return;
+  const point = pickPointAvoiding(
+    rng,
+    opts,
+    null,
+    FLAT_GROUND.large,
+    margin,
+  );
+  if (!point) return;
 
-  const x = opts.cx * opts.chunkSize + randomBetween(rng, -half, half);
-  const z = opts.cz * opts.chunkSize + randomBetween(rng, -half, half);
+  const { x, z } = point;
   const rotationY = randomBetween(rng, 0, Math.PI * 2);
 
   exclusionZones.push({ x, z, radius: SHIP_CLEARING_RADIUS });
@@ -681,12 +747,19 @@ function spawnShipInChunk(
   if (rng() < CHUNK_TREASURE_NEAR_SHIP_CHANCE) {
     const itemCount = Math.floor(randomBetween(rng, 2, 5));
     for (let i = 0; i < itemCount; i++) {
-      const angle = randomBetween(rng, 0, Math.PI * 2);
-      const distance = randomBetween(rng, 4, Math.min(margin - 1, 10));
+      const point = pickFlatPointNear(
+        rng,
+        x,
+        z,
+        4,
+        Math.min(margin - 1, 10),
+        FLAT_GROUND.solid,
+      );
+      if (!point) continue;
       addModel({
         file: pick(rng, TREASURE_MODELS),
-        x: x + Math.cos(angle) * distance,
-        z: z + Math.sin(angle) * distance,
+        x: point.x,
+        z: point.z,
         scale: randomBetween(rng, 0.9, 1.4),
         rotationY: randomBetween(rng, 0, Math.PI * 2),
       });
@@ -703,10 +776,11 @@ function spawnGroup(
   minScale: number,
   maxScale: number,
   exclusions: { x: number; z: number; radius: number }[] | null,
+  groundRule: FlatGroundRule,
 ) {
   const n = Math.round(count);
   for (let i = 0; i < n; i++) {
-    const point = pickPointAvoiding(rng, opts, exclusions);
+    const point = pickPointAvoiding(rng, opts, exclusions, groundRule);
     if (!point) continue;
     addModel({
       file: pick(rng, models),
@@ -721,8 +795,11 @@ function spawnGroup(
 function randomPointInChunk(
   rng: () => number,
   opts: { cx: number; cz: number; chunkSize: number },
+  margin = 0,
 ) {
-  const half = opts.chunkSize / 2;
+  const half = opts.chunkSize / 2 - margin;
+  if (half <= 0) return null;
+
   return {
     x: opts.cx * opts.chunkSize + randomBetween(rng, -half, half),
     z: opts.cz * opts.chunkSize + randomBetween(rng, -half, half),
@@ -735,13 +812,59 @@ function pickPointAvoiding(
   rng: () => number,
   opts: { cx: number; cz: number; chunkSize: number },
   exclusions: { x: number; z: number; radius: number }[] | null,
+  groundRule: FlatGroundRule,
+  margin = 0,
 ) {
-  const attempts = exclusions && exclusions.length > 0 ? 6 : 1;
+  const attempts = Math.max(
+    groundRule.attempts,
+    exclusions && exclusions.length > 0 ? 6 : 1,
+  );
   for (let i = 0; i < attempts; i++) {
-    const p = randomPointInChunk(rng, opts);
-    if (!exclusions || !isInsideAnyZone(p.x, p.z, exclusions)) return p;
+    const p = randomPointInChunk(rng, opts, margin);
+    if (!p) return null;
+    if (exclusions && isInsideAnyZone(p.x, p.z, exclusions)) continue;
+    if (!isFlatEnough(p.x, p.z, groundRule)) continue;
+    return p;
   }
   return null;
+}
+
+function pickFlatPointNear(
+  rng: () => number,
+  centerX: number,
+  centerZ: number,
+  minDistance: number,
+  maxDistance: number,
+  groundRule: FlatGroundRule,
+) {
+  for (let i = 0; i < groundRule.attempts; i++) {
+    const angle = randomBetween(rng, 0, Math.PI * 2);
+    const distance = randomBetween(rng, minDistance, maxDistance);
+    const point = {
+      x: centerX + Math.cos(angle) * distance,
+      z: centerZ + Math.sin(angle) * distance,
+    };
+
+    if (isFlatEnough(point.x, point.z, groundRule)) return point;
+  }
+
+  return null;
+}
+
+function isFlatEnough(x: number, z: number, rule: FlatGroundRule) {
+  return getTerrainSlope(x, z, rule.sampleRadius) <= rule.maxSlope;
+}
+
+function getTerrainSlope(x: number, z: number, sampleRadius: number) {
+  const left = getTerrainHeight(x - sampleRadius, z);
+  const right = getTerrainHeight(x + sampleRadius, z);
+  const back = getTerrainHeight(x, z - sampleRadius);
+  const front = getTerrainHeight(x, z + sampleRadius);
+
+  const dx = (right - left) / (sampleRadius * 2);
+  const dz = (front - back) / (sampleRadius * 2);
+
+  return Math.sqrt(dx * dx + dz * dz);
 }
 
 function isInsideAnyZone(
